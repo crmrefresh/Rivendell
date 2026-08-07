@@ -127,7 +127,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Duplicate tagger &amp; merger</h1>
+    <h1>Duplicate Tagger &amp; Merger</h1>
     <div class="sub">Upload a CRM contact export (CSV or XLSX). Rows get scanned for name and contact-info matches, tagged, and — where the match is certain — merged into the newer record.</div>
   </header>
 
@@ -146,8 +146,60 @@
     </div>
   </div>
 
+  <div class="dropzone" id="dropzone">
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+    <div class="dz-title">Click to choose a file, or drag one here</div>
+    <div class="dz-sub">.csv or .xlsx</div>
+    <div class="filename" id="filename"></div>
+  </div>
+  <button class="run" id="runBtn" disabled>Run duplicate check</button>
+  <div class="status" id="status"></div>
+
+  <section class="results" id="results">
+    <h2>Summary</h2>
+    <div class="stats">
+      <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">Total rows</div></div>
+      <div class="stat s"><div class="num" id="statSuspect">0</div><div class="lbl">Suspected only</div></div>
+      <div class="stat m"><div class="num" id="statMerge">0</div><div class="lbl">Merged (surviving rows)</div></div>
+      <div class="stat v"><div class="num" id="statVoid">0</div><div class="lbl">Voided rows</div></div>
+    </div>
+
+    <h2>Downloads</h2>
+    <div class="downloads">
+      <a class="dl" id="dlVoid" download="void_dupes.csv">
+        <div class="dl-title">Void Dupe File (CSV)</div>
+        <div class="dl-sub">First name, last name, email columns, and tags — for the rows to remove from your CRM.</div>
+      </a>
+      <a class="dl" id="dlMerged" download="merged_file.csv">
+        <div class="dl-title">Merged File (CSV)</div>
+        <div class="dl-sub">Suspected + merged rows only, tagged. Void and untouched rows excluded.</div>
+      </a>
+      <a class="dl" id="dlFull" download="full_file.csv">
+        <div class="dl-title">Full File (CSV)</div>
+        <div class="dl-sub">Every row except the voided ones — the complete tagged file, ready to re-import.</div>
+      </a>
+    </div>
+
+    <h2>Preview (first 60 rows)</h2>
+    <div class="tablewrap"><table id="previewTable"></table></div>
+    <div class="note">Rows are color-coded: amber = suspected only, teal = surviving merged row, strikethrough red = voided.</div>
+
+    <details class="assumptions">
+      <summary>Assumptions this tool makes</summary>
+      <ul>
+        <li>Columns are auto-detected by name (case-insensitive): anything containing "first"+"name", "last"+"name", "email", "phone", "address", "tag", "group", "note"/"background", "created".</li>
+        <li>Name matching uses a built-in common-nickname list (Rebecca/Becky, Richard/Dick, James/Jim, etc.) plus exact matches on last name.</li>
+        <li>Merges require an exact match on email, phone (digits only, last 10 compared), or address (punctuation/case-insensitive) — never on name alone.</li>
+        <li>The newest row is chosen by parsing your "Created At" column as a date. Rows with an unparseable or missing date are treated as the oldest.</li>
+        <li>Tags/Groups/Notes/Background fields are combined (comma-separated, duplicates skipped) into the surviving row.</li>
+        <li>Other contact fields (phone/email/address) fill blanks on the surviving row; every distinct value across the whole merge cluster is preserved in "(2)", "(3)", etc. columns rather than being dropped.</li>
+        <li>This runs entirely in your browser — no data leaves your machine.</li>
+      </ul>
+    </details>
+  </section>
+
   <details class="refblock">
-    <summary>Full workflow reference <span class="rsub">copy/paste into project instructions or share with your team</span></summary>
+    <summary>Full Workflow Reference <span class="rsub">copy/paste into project instructions or share with your team</span></summary>
     <div class="refbody">
       <textarea id="workflowText" readonly># CRM Duplicate Detection & Merge Workflow
 
@@ -193,60 +245,13 @@ All other single-value fields -> Fill if blank; otherwise keep the newest row's 
 ## Step 6: Output files
 1. Void file: Only these columns -- Email, CRM: Void Dupe, CRM: Duplicate. All other columns removed. Contains only the voided (removed) rows.
 2. Merged file: The full working file with all remaining rows and their final tag states (CRM: Suspected Duplicate for unmerged suspects, CRM: Merged + CRM: Duplicate for surviving merged rows). Voided rows are excluded entirely from this file.
+3. Full file: Every row except the voided ones, tagged. This is the complete file ready to re-import.
 
 ## Delivery format
 All output files delivered as CSV (not xlsx), regardless of whether highlighting or other formatting was used during processing.</textarea>
       <button class="copybtn" id="copyWorkflowBtn">Copy to clipboard</button>
     </div>
   </details>
-
-  <div class="dropzone" id="dropzone">
-    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
-    <div class="dz-title">Click to choose a file, or drag one here</div>
-    <div class="dz-sub">.csv or .xlsx</div>
-    <div class="filename" id="filename"></div>
-  </div>
-  <button class="run" id="runBtn" disabled>Run duplicate check</button>
-  <div class="status" id="status"></div>
-
-  <section class="results" id="results">
-    <h2>Summary</h2>
-    <div class="stats">
-      <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">Total rows</div></div>
-      <div class="stat s"><div class="num" id="statSuspect">0</div><div class="lbl">Suspected only</div></div>
-      <div class="stat m"><div class="num" id="statMerge">0</div><div class="lbl">Merged (surviving rows)</div></div>
-      <div class="stat v"><div class="num" id="statVoid">0</div><div class="lbl">Voided rows</div></div>
-    </div>
-
-    <h2>Downloads</h2>
-    <div class="downloads">
-      <a class="dl" id="dlVoid" download="void_dupes.csv">
-        <div class="dl-title">Void dupe file (CSV)</div>
-        <div class="dl-sub">First name, last name, email columns, and tags — for the rows to remove from your CRM.</div>
-      </a>
-      <a class="dl" id="dlMerged" download="merged_file.csv">
-        <div class="dl-title">Merged file (CSV)</div>
-        <div class="dl-sub">Suspected + merged rows only, tagged. Void and untouched rows excluded.</div>
-      </a>
-    </div>
-
-    <h2>Preview (first 60 rows)</h2>
-    <div class="tablewrap"><table id="previewTable"></table></div>
-    <div class="note">Rows are color-coded: amber = suspected only, teal = surviving merged row, strikethrough red = voided.</div>
-
-    <details class="assumptions">
-      <summary>Assumptions this tool makes</summary>
-      <ul>
-        <li>Columns are auto-detected by name (case-insensitive): anything containing "first"+"name", "last"+"name", "email", "phone", "address", "tag", "group", "note"/"background", "created".</li>
-        <li>Name matching uses a built-in common-nickname list (Rebecca/Becky, Richard/Dick, James/Jim, etc.) plus exact matches on last name.</li>
-        <li>Merges require an exact match on email, phone (digits only, last 10 compared), or address (punctuation/case-insensitive) — never on name alone.</li>
-        <li>The newest row is chosen by parsing your "Created At" column as a date. Rows with an unparseable or missing date are treated as the oldest.</li>
-        <li>Tags/Groups/Notes/Background fields are combined (comma-separated, duplicates skipped) into the surviving row.</li>
-        <li>Other contact fields (phone/email/address) fill blanks on the surviving row; every distinct value across the whole merge cluster is preserved in "(2)", "(3)", etc. columns rather than being dropped.</li>
-        <li>This runs entirely in your browser — no data leaves your machine.</li>
-      </ul>
-    </details>
-  </section>
 </div>
 
 <script>
@@ -594,14 +599,18 @@ function process(rows, headers){
   voidIdx.forEach(i => { appendTag(i, "CRM: Void Dupe"); appendTag(i, "CRM: Duplicate"); });
 
   const finalHeaders = [...headers, ...extraCols].filter((h,idx,arr)=>arr.indexOf(h)===idx);
+  const stripVoidTag = r => {
+    const copy = {...r};
+    const parts = (copy[TAG_COL]||"").toString().split(",").map(s=>s.trim()).filter(Boolean).filter(t => t !== "CRM: Void Dupe");
+    copy[TAG_COL] = parts.join(", ");
+    return copy;
+  };
   const mergedRows = rows
     .filter((_,i) => !voidIdx.has(i) && (survivorIdx.has(i) || suspectedOnly.has(i)))
-    .map(r => {
-      const copy = {...r};
-      const parts = (copy[TAG_COL]||"").toString().split(",").map(s=>s.trim()).filter(Boolean).filter(t => t !== "CRM: Void Dupe");
-      copy[TAG_COL] = parts.join(", ");
-      return copy;
-    });
+    .map(stripVoidTag);
+  const fullFileRows = rows
+    .filter((_,i) => !voidIdx.has(i))
+    .map(stripVoidTag);
   const voidHeaders = [cols.firstName, cols.lastName, "Tags", "Tags", ...(cols.emails||[])];
   const voidRows = [...voidIdx].map(i => {
     const emailVals = (cols.emails||[]).map(c => rows[i][c] || "");
@@ -615,7 +624,7 @@ function process(rows, headers){
   });
 
   return {
-    finalHeaders, mergedRows, voidRows, voidHeaders,
+    finalHeaders, mergedRows, fullFileRows, voidRows, voidHeaders,
     stats: {
       total: n,
       suspected: suspectedOnly.size,
@@ -655,13 +664,17 @@ function renderResults(result){
   document.getElementById("statVoid").textContent = result.stats.voided;
 
   const mergedCSV = toCSV(result.mergedRows, result.finalHeaders);
+  const fullCSV = toCSV(result.fullFileRows, result.finalHeaders);
   const voidCSV = toCSVFromArrays(result.voidRows, result.voidHeaders);
 
   const dlMerged = document.getElementById("dlMerged");
+  const dlFull = document.getElementById("dlFull");
   const dlVoid = document.getElementById("dlVoid");
   dlMerged.href = URL.createObjectURL(new Blob([mergedCSV], {type:"text/csv"}));
+  dlFull.href = URL.createObjectURL(new Blob([fullCSV], {type:"text/csv"}));
   dlVoid.href = URL.createObjectURL(new Blob([voidCSV], {type:"text/csv"}));
   dlMerged.download = uploadedBaseName + " - Merged Dupes.csv";
+  dlFull.download = uploadedBaseName + " - Full File.csv";
   dlVoid.download = uploadedBaseName + " - Void Dupes.csv";
 
   // preview table: first 60 original rows (including voided, to show the before/after)
