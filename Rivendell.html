@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Duplicate Tagger &amp; Merger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#000000;
+    --paper:#FFFFFF;
+    --blue:#1C53E5;
+    --line:rgba(0,0,0,0.16);
+    --line-strong:rgba(0,0,0,0.4);
+    --muted:rgba(0,0,0,0.6);
+    --suspect:var(--blue);
+    --suspect-bg:rgba(28,83,229,0.07);
+    --merge:var(--blue);
+    --merge-bg:rgba(28,83,229,0.16);
+    --void:#000000;
+    --void-bg:rgba(0,0,0,0.06);
+    --accent:var(--blue);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 80px;}
+  header{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:32px;}
+  h1{font-size:26px;font-weight:700;margin:0 0 6px;letter-spacing:-0.01em;}
+  .sub{color:var(--muted);font-size:14.5px;max-width:640px;}
+  .rulecard{
+    display:flex; gap:0; border:1px solid var(--line-strong); margin-bottom:32px;
+    font-size:13px; overflow:hidden;
+  }
+  .rulecard > div{flex:1; padding:14px 16px; border-right:1px solid var(--line-strong);}
+  .rulecard > div:last-child{border-right:none;}
+  .rulecard .tag{
+    display:inline-block; font-weight:700; font-size:11px; letter-spacing:.03em;
+    padding:2px 7px; border-radius:3px; margin-bottom:6px;
+  }
+  .tag.s{background:#faf1dc; color:#8a6a1f;}
+  .tag.m{background:#e2f1ec; color:#1c6e5c;}
+  .tag.v{background:#fbe9e4; color:#9c3d2e;}
+  .rulecard p{margin:0; color:var(--muted); font-size:12.5px;}
+
+  .dropzone{
+    border:2px dashed var(--line-strong); padding:36px 20px; text-align:center;
+    cursor:pointer; transition:border-color .15s, background .15s; background:#fff;
+  }
+  .dropzone:hover, .dropzone.drag{border-color:var(--accent); background:rgba(28,83,229,0.06);}
+  .dropzone input{display:none;}
+  .dz-title{font-weight:700; font-size:15px; margin-bottom:4px;}
+  .dz-sub{color:var(--muted); font-size:13px;}
+  .filename{margin-top:14px; font-size:13px; font-weight:600; color:var(--accent);}
+
+  button.run{
+    margin-top:18px; width:100%; padding:13px; font-size:14.5px; font-weight:700;
+    background:var(--ink); color:var(--paper); border:none; cursor:pointer;
+    letter-spacing:.01em;
+  }
+  button.run:disabled{background:var(--line-strong); cursor:not-allowed; color:#fff;}
+  button.run:not(:disabled):hover{background:var(--accent);}
+
+  .status{font-size:13px; color:var(--muted); margin-top:10px; min-height:18px;}
+  .error{color:var(--void); font-weight:600;}
+
+  section.results{margin-top:40px; display:none;}
+  section.results.show{display:block;}
+  h2{font-size:16px; margin:0 0 14px; font-weight:700; border-bottom:1px solid var(--line); padding-bottom:8px;}
+
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line-strong); border:1px solid var(--line-strong); margin-bottom:28px;}
+  .stat{background:#fff; padding:16px 14px;}
+  .stat .num{font-size:26px; font-weight:700; line-height:1;}
+  .stat .lbl{font-size:11.5px; color:var(--muted); margin-top:6px; text-transform:uppercase; letter-spacing:.03em;}
+  .stat.s .num{color:var(--suspect);}
+  .stat.m .num{color:var(--merge);}
+  .stat.v .num{color:var(--void);}
+
+  .downloads{display:flex; gap:12px; margin-bottom:32px; flex-wrap:wrap;}
+  .dl{
+    flex:1; min-width:220px; border:1px solid var(--ink); padding:14px 16px;
+    text-decoration:none; color:var(--ink); display:block;
+  }
+  .dl:hover{background:var(--ink); color:var(--paper);}
+  .dl .dl-title{font-weight:700; font-size:13.5px; margin-bottom:3px;}
+  .dl .dl-sub{font-size:12px; color:var(--muted);}
+  .dl:hover .dl-sub{color:rgba(255,255,255,0.7);}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px;}
+  th,td{border:1px solid var(--line); padding:6px 8px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px;}
+  th{background:rgba(0,0,0,0.04); font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.02em; color:var(--muted);}
+  tr.void-row td{color:var(--void); text-decoration:line-through; opacity:.7;}
+  tr.merged-row td{background:var(--merge-bg);}
+  tr.susp-row td{background:var(--suspect-bg);}
+  .tablewrap{overflow-x:auto; border:1px solid var(--line-strong);}
+  .note{font-size:12px; color:var(--muted); margin-top:10px;}
+  .assumptions{margin-top:36px; font-size:12.5px; color:var(--muted); border-top:1px solid var(--line); padding-top:16px;}
+  .assumptions summary{cursor:pointer; font-weight:700; color:var(--ink); margin-bottom:6px;}
+  .assumptions ul{margin:8px 0 0; padding-left:20px;}
+  .assumptions li{margin-bottom:4px;}
+
+  .refblock{border:1px solid var(--line-strong); margin-bottom:32px; background:#fff;}
+  .refblock summary{
+    cursor:pointer; padding:14px 16px; font-weight:700; font-size:14px;
+    list-style:none; display:flex; align-items:center; justify-content:space-between;
+  }
+  .refblock summary::-webkit-details-marker{display:none;}
+  .refblock summary::after{content:"+"; font-size:18px; color:var(--muted); font-weight:400;}
+  .refblock[open] summary::after{content:"\2212";}
+  .refblock summary .rsub{font-weight:400; color:var(--muted); font-size:12.5px; margin-left:10px;}
+  .refbody{padding:0 16px 16px;}
+  .refbody textarea{
+    width:100%; height:340px; font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px; line-height:1.55; border:1px solid var(--line); padding:12px;
+    resize:vertical; color:var(--ink); background:rgba(0,0,0,0.02);
+  }
+  .copybtn{
+    margin-top:10px; padding:8px 14px; font-size:12.5px; font-weight:700;
+    background:var(--ink); color:var(--paper); border:none; cursor:pointer;
+  }
+  .copybtn:hover{background:var(--accent);}
+  .copybtn.copied{background:var(--merge);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Duplicate Tagger &amp; Merger</h1>
+    <div class="sub">Upload a CRM contact export (CSV or XLSX). Rows get scanned for name and contact-info matches, tagged, and — where the match is certain — merged into the newer record.</div>
+  </header>
+
+  <div class="rulecard">
+    <div>
+      <span class="tag s">CRM: Suspected Duplicate</span>
+      <p>Name match (incl. nicknames) or identical email address. Flagged for review, not merged.</p>
+    </div>
+    <div>
+      <span class="tag m">CRM: Merged</span>
+      <p>Name match plus an identical email, phone, or address. Older row's data folded into the newer row.</p>
+    </div>
+    <div>
+      <span class="tag v">CRM: Void Dupe</span>
+      <p>The older row in a confirmed merge. Removed from the main file, kept in a separate void list.</p>
+    </div>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+    <div class="dz-title">Click to choose a file, or drag one here</div>
+    <div class="dz-sub">.csv or .xlsx</div>
+    <div class="filename" id="filename"></div>
+  </div>
+  <button class="run" id="runBtn" disabled>Run duplicate check</button>
+  <div class="status" id="status"></div>
+
+  <section class="results" id="results">
+    <h2>Summary</h2>
+    <div class="stats">
+      <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">Total rows</div></div>
+      <div class="stat s"><div class="num" id="statSuspect">0</div><div class="lbl">Suspected only</div></div>
+      <div class="stat m"><div class="num" id="statMerge">0</div><div class="lbl">Merged (surviving rows)</div></div>
+      <div class="stat v"><div class="num" id="statVoid">0</div><div class="lbl">Voided rows</div></div>
+    </div>
+
+    <h2>Downloads</h2>
+    <div class="downloads">
+      <a class="dl" id="dlVoid" download="void_dupes.csv">
+        <div class="dl-title">Void Dupe File (CSV)</div>
+        <div class="dl-sub">First name, last name, email columns, and tags — for the rows to remove from your CRM.</div>
+      </a>
+      <a class="dl" id="dlMerged" download="merged_file.csv">
+        <div class="dl-title">Merged File (CSV)</div>
+        <div class="dl-sub">Suspected + merged rows only, tagged. Void and untouched rows excluded.</div>
+      </a>
+      <a class="dl" id="dlFull" download="full_file.csv">
+        <div class="dl-title">Full File (CSV)</div>
+        <div class="dl-sub">Every row except the voided ones — the complete tagged file, ready to re-import.</div>
+      </a>
+    </div>
+
+    <h2>Preview (first 60 rows)</h2>
+    <div class="tablewrap"><table id="previewTable"></table></div>
+    <div class="note">Rows are color-coded: amber = suspected only, teal = surviving merged row, strikethrough red = voided.</div>
+
+    <details class="assumptions">
+      <summary>Assumptions this tool makes</summary>
+      <ul>
+        <li>Columns are auto-detected by name (case-insensitive): anything containing "first"+"name", "last"+"name", "email", "phone", "address", "tag", "group", "note"/"background", "created".</li>
+        <li>Name matching uses a built-in common-nickname list (Rebecca/Becky, Richard/Dick, James/Jim, etc.) plus exact matches on last name.</li>
+        <li>Merges require an exact match on email, phone (digits only, last 10 compared), or address (punctuation/case-insensitive) — never on name alone.</li>
+        <li>The newest row is chosen by parsing your "Created At" column as a date. Rows with an unparseable or missing date are treated as the oldest.</li>
+        <li>Tags/Groups/Notes/Background fields are combined (comma-separated, duplicates skipped) into the surviving row.</li>
+        <li>Other contact fields (phone/email/address) fill blanks on the surviving row; every distinct value across the whole merge cluster is preserved in "(2)", "(3)", etc. columns rather than being dropped.</li>
+        <li>This runs entirely in your browser — no data leaves your machine.</li>
+      </ul>
+    </details>
+  </section>
+
+  <details class="refblock">
+    <summary>Full Workflow Reference <span class="rsub">copy/paste into project instructions or share with your team</span></summary>
+    <div class="refbody">
+      <textarea id="workflowText" readonly># CRM Duplicate Detection & Merge Workflow
+
+## Purpose
+Identify suspected duplicate contacts, merge only the ones that meet strict confidence criteria, and produce clean output files for CRM import.
+
+## Step 1: Column discovery
+Before applying any logic, scan the uploaded file's actual column headers. CRM exports frequently have multiple near-duplicate columns (e.g. "Email", "Email 2", "Work Email") with inconsistent casing. Dynamically identify all columns related to: name, email, phone, address, tags, groups, background/notes, and Created At. Do not assume fixed column names.
+
+## Step 2: Tag "CRM: Suspected Duplicate"
+Flag two rows as suspected duplicates if EITHER is true:
+- Name match: First + Last name match exactly, OR match via a known nickname variation (e.g. Rebecca/Becky, Richard/Dick/Rich, James/Jim)
+- Email match: Identical email address, regardless of name
+
+Email-similarity matching (same local-part, different domain, e.g. christa777@gmail vs christa777@aol) is intentionally NOT used -- it produced too many false positives on common first-name-style email prefixes (leslie@, peggy@, mike@, etc.) that belong to unrelated people. Only an exact, full email address match counts.
+
+Both rows in a suspected pair/cluster get tagged CRM: Suspected Duplicate.
+
+## Step 3: Confirm and merge -- "CRM: Merged"
+Only merge when 100% confidence criteria are met. A pair merges ONLY if:
+- Name match (exact or known nickname variation) AND
+- Identical email (any email type/column) OR identical phone (any phone type/column) OR identical address (any address type/column)
+
+If not 100% confident, do NOT merge -- leave the pair tagged as suspected only.
+
+Clusters: If 3+ rows all meet the merge criteria with each other (chain), treat them as one cluster and merge all into the single newest row (by Created At). Do not do isolated pairwise merges within a cluster.
+
+No manual-review flagging for nickname-variation merges -- since merges always require a second identical identifier (email/phone/address), no additional review step is needed for name-variation collision risk.
+
+## Step 4: Merge field logic (older row(s) -> newest row)
+Newest row (by Created At) survives and receives the combined data:
+
+Field type -> Rule
+Tags, Groups, key background info, Notes -> Combine values from all merging rows, separated by commas. Skip exact duplicate values.
+Phone, Email, Address (and similar multi-instance contact fields) -> If the newest row's cell is blank, fill from the older row. Every distinct value found across the whole cluster is preserved: the newest row's own value (if any) always keeps the primary column, and any additional distinct values get their own "(2)", "(3)", etc. column rather than being dropped. Exact duplicate values are skipped.
+All other single-value fields -> Fill if blank; otherwise keep the newest row's value.
+
+## Step 5: Apply final tags
+- Surviving (merged) row: replace CRM: Suspected Duplicate with CRM: Duplicate, and add CRM: Merged
+- Voided (older) row(s): replace CRM: Suspected Duplicate with CRM: Duplicate, and add CRM: Void Dupe
+- Unmerged suspected pairs (not 100% confident): keep CRM: Suspected Duplicate -- no change
+
+## Step 6: Output files
+1. Void file: Only these columns -- Email, CRM: Void Dupe, CRM: Duplicate. All other columns removed. Contains only the voided (removed) rows.
+2. Merged file: The full working file with all remaining rows and their final tag states (CRM: Suspected Duplicate for unmerged suspects, CRM: Merged + CRM: Duplicate for surviving merged rows). Voided rows are excluded entirely from this file.
+3. Full file: Every row except the voided ones, tagged. This is the complete file ready to re-import.
+
+## Delivery format
+All output files delivered as CSV (not xlsx), regardless of whether highlighting or other formatting was used during processing.</textarea>
+      <button class="copybtn" id="copyWorkflowBtn">Copy to clipboard</button>
+    </div>
+  </details>
+</div>
+
+<script>
+// ---------- nickname normalization ----------
+const NICK_GROUPS = [
+  ["rebecca","becky","reba"],["richard","dick","rich","ricky","rick"],
+  ["james","jim","jimmy","jamie"],["robert","bob","bobby","rob","robbie"],
+  ["william","bill","billy","will","liam"],["elizabeth","beth","betty","liz","eliza","lisa","betsy","libby"],
+  ["margaret","maggie","meg","peggy","margie","marge"],["katherine","katharine","kathleen","kate","katie","kathy","kay"],
+  ["michael","mike","mikey","mick","micky"],["christopher","chris","topher"],
+  ["jennifer","jen","jenny","jenn"],["jonathan","jon","johnny","john"],
+  ["daniel","dan","danny"],["matthew","matt","matty"],
+  ["nicholas","nick","nicky","nico"],["alexander","alex","xander","al"],
+  ["joseph","joe","joey"],["thomas","tom","tommy"],
+  ["charles","charlie","chuck","chas","chip"],["anthony","tony"],
+  ["patricia","pat","patty","trish","patsy"],["deborah","debra","deb","debbie"],
+  ["susan","sue","susie","suzy"],["cynthia","cindy"],["kimberly","kim"],
+  ["samantha","sam","sammy"],["benjamin","ben","benny"],
+  ["edward","ed","eddie","ted","teddy"],["timothy","tim","timmy"],
+  ["andrew","andy","drew"],["stephen","steven","steve","stevie"],
+  ["gregory","greg","gregg"],["jacob","jake"],["nathaniel","nathan","nate"],
+  ["zachary","zach","zack"],["victoria","vicky","vicki","tori"],
+  ["amanda","mandy"],["jessica","jess","jessie"],
+  ["barbara","barb","barbie"],["frances","francis","fran","frankie","franny"],
+  ["theodore","theo"],["alexandra","sasha","lexi"],
+  ["isabella","bella","izzy"],["gabriel","gabe"],
+  ["christina","christine","tina","christy","kris","krissy"],
+  ["gerald","gerry","jerry"],["lawrence","larry"],["ronald","ron","ronnie"],
+  ["donald","don","donnie"],["douglas","doug"],["raymond","ray"],
+  ["vincent","vince","vinny"],["russell","russ"],["bradley","brad"],
+  ["jeffrey","jeff","geoff"],["kenneth","ken","kenny"],["sandra","sandy"],
+  ["carolyn","caroline","carol","carrie"],["diana","diane","di"],
+  ["julia","julie","jules"],["maria","mia"],["melissa","missy","mel"],
+  ["angela","angie"],["patrick","paddy"],["dorothy","dot","dottie"],
+  ["virginia","ginny","ginger"]
+];
+const NICK_MAP = {};
+NICK_GROUPS.forEach(g => { const canon = g[0]; g.forEach(n => { if(!(n in NICK_MAP)) NICK_MAP[n] = canon; }); });
+
+function norm(s){ return (s===null||s===undefined) ? "" : String(s).trim().toLowerCase(); }
+function canonFirst(s){ const n = norm(s); return NICK_MAP[n] || n; }
+function digitsOnly(s){ return norm(s).replace(/[^0-9]/g,""); }
+function last10(s){ const d = digitsOnly(s); return d.length>10 ? d.slice(-10) : d; }
+function normAddress(s){ return norm(s).replace(/[.,#]/g,"").replace(/\s+/g," ").trim(); }
+function emailLocal(e){ const n = norm(e); const at = n.indexOf("@"); return at>-1 ? n.slice(0,at) : n; }
+function parseDateSafe(s){
+  if(!s) return -Infinity;
+  const t = Date.parse(s);
+  return isNaN(t) ? -Infinity : t;
+}
+
+// ---------- union-find ----------
+function makeUF(n){
+  const p = Array.from({length:n},(_,i)=>i);
+  function find(x){ while(p[x]!==x){ p[x]=p[p[x]]; x=p[x]; } return x; }
+  function union(a,b){ a=find(a); b=find(b); if(a!==b) p[a]=b; }
+  return {find, union};
+}
+
+// ---------- column discovery ----------
+function hasWord(header, word){
+  const tokens = (header||"").toString().toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some(t => t === word || t === word + "s" || t === word + "es");
+}
+function sampleValues(rows, col, limit){
+  limit = limit || 25;
+  const vals = [];
+  for(const r of rows){
+    const v = (r[col]||"").toString().trim();
+    if(v){ vals.push(v); if(vals.length>=limit) break; }
+  }
+  return vals;
+}
+function looksBoolean(vals){
+  if(!vals.length) return false;
+  const boolSet = new Set(["yes","no","true","false","y","n","1","0"]);
+  const c = vals.filter(v => boolSet.has(v.toLowerCase())).length;
+  return c / vals.length >= 0.7;
+}
+function looksLikeEmail(vals){
+  if(!vals.length) return true; // no data to judge by, don't exclude on that basis alone
+  const c = vals.filter(v => v.includes("@")).length;
+  return c / vals.length >= 0.5;
+}
+function looksLikeIP(vals){
+  if(!vals.length) return false;
+  const re = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  const c = vals.filter(v => re.test(v)).length;
+  return c / vals.length >= 0.5;
+}
+
+function discoverColumns(headers, rows){
+  const find = (...words) => headers.filter(h => words.every(w => hasWord(h, w)));
+  const firstName = find("first","name")[0] || headers.find(h=>(h||"").toString().toLowerCase()==="first");
+  const lastName = find("last","name")[0] || headers.find(h=>(h||"").toString().toLowerCase()==="last");
+
+  const emailCandidates = find("email");
+  const phoneCandidates = find("phone");
+  const addressCandidates = find("address");
+
+  const emails = emailCandidates.filter(c => {
+    const vals = sampleValues(rows, c);
+    return !looksBoolean(vals) && looksLikeEmail(vals);
+  });
+  const phones = phoneCandidates.filter(c => !looksBoolean(sampleValues(rows, c)));
+  const addresses = addressCandidates.filter(c => {
+    const vals = sampleValues(rows, c);
+    return !looksBoolean(vals) && !looksLikeIP(vals);
+  });
+
+  return {
+    firstName, lastName, emails, phones, addresses,
+    tags: find("tag"),
+    groups: find("group"),
+    notes: headers.filter(h => hasWord(h,"note") || hasWord(h,"background")),
+    created: headers.find(h => hasWord(h,"created"))
+  };
+}
+
+let workbookRows = null;
+let workbookHeaders = null;
+
+const copyBtn = document.getElementById("copyWorkflowBtn");
+copyBtn.addEventListener("click", () => {
+  const ta = document.getElementById("workflowText");
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  const done = () => {
+    copyBtn.textContent = "Copied";
+    copyBtn.classList.add("copied");
+    setTimeout(() => { copyBtn.textContent = "Copy to clipboard"; copyBtn.classList.remove("copied"); }, 1800);
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(ta.value).then(done).catch(() => { document.execCommand("copy"); done(); });
+  } else {
+    document.execCommand("copy");
+    done();
+  }
+});
+
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const filenameEl = document.getElementById("filename");
+const runBtn = document.getElementById("runBtn");
+const statusEl = document.getElementById("status");
+
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+dropzone.addEventListener("drop", e => {
+  e.preventDefault(); dropzone.classList.remove("drag");
+  if(e.dataTransfer.files.length){ fileInput.files = e.dataTransfer.files; handleFile(e.dataTransfer.files[0]); }
+});
+fileInput.addEventListener("change", () => { if(fileInput.files.length) handleFile(fileInput.files[0]); });
+
+let uploadedBaseName = "export";
+
+function deriveBaseName(filename){
+  const noExt = filename.replace(/\.[^/.]+$/, "");
+  const dashIdx = noExt.indexOf(" - ");
+  return (dashIdx > -1 ? noExt.slice(0, dashIdx) : noExt).trim() || "export";
+}
+
+function handleFile(file){
+  filenameEl.textContent = file.name;
+  uploadedBaseName = deriveBaseName(file.name);
+  statusEl.textContent = "Reading file...";
+  statusEl.classList.remove("error");
+  runBtn.disabled = true;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:"array"});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:"", raw:false});
+      if(!rows.length){ throw new Error("No rows found in the first sheet."); }
+      workbookRows = rows;
+      workbookHeaders = Object.keys(rows[0]);
+      statusEl.textContent = rows.length + " rows loaded. Ready to run.";
+      runBtn.disabled = false;
+    } catch(err){
+      statusEl.textContent = "Could not read that file: " + err.message;
+      statusEl.classList.add("error");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+runBtn.addEventListener("click", () => {
+  if(!workbookRows) return;
+  statusEl.textContent = "Processing...";
+  setTimeout(() => {
+    try {
+      const result = process(workbookRows, workbookHeaders);
+      renderResults(result);
+      statusEl.textContent = "Done.";
+    } catch(err){
+      statusEl.textContent = "Error while processing: " + err.message;
+      statusEl.classList.add("error");
+      console.error(err);
+    }
+  }, 30);
+});
+
+function process(rows, headers){
+  const cols = discoverColumns(headers, rows);
+  if(!cols.firstName || !cols.lastName){
+    throw new Error("Couldn't find First Name / Last Name columns in this file.");
+  }
+
+  const n = rows.length;
+  const rowInfo = rows.map(r => {
+    const emails = (cols.emails||[]).map(c => norm(r[c])).filter(Boolean);
+    const phones = (cols.phones||[]).map(c => last10(r[c])).filter(Boolean);
+    const addrs = (cols.addresses||[]).map(c => normAddress(r[c])).filter(Boolean);
+    return {
+      last: norm(r[cols.lastName]),
+      firstCanon: canonFirst(r[cols.firstName]),
+      emails, emailLocals: emails.map(emailLocal),
+      phones, addrs,
+      created: cols.created ? parseDateSafe(r[cols.created]) : -Infinity
+    };
+  });
+
+  const suspUF = makeUF(n);
+  const mergeUF = makeUF(n);
+
+  // block by last name for name-based comparisons
+  const byLast = {};
+  rowInfo.forEach((info,i) => { (byLast[info.last] = byLast[info.last]||[]).push(i); });
+  Object.values(byLast).forEach(group => {
+    for(let a=0;a<group.length;a++){
+      for(let b=a+1;b<group.length;b++){
+        const i=group[a], j=group[b];
+        if(!rowInfo[i].last) continue; // skip blank last names
+        if(rowInfo[i].firstCanon === rowInfo[j].firstCanon){
+          suspUF.union(i,j);
+          const exactEmail = rowInfo[i].emails.some(e => rowInfo[j].emails.includes(e));
+          const exactPhone = rowInfo[i].phones.some(p => rowInfo[j].phones.includes(p));
+          const exactAddr = rowInfo[i].addrs.some(a2 => rowInfo[j].addrs.includes(a2));
+          if(exactEmail || exactPhone || exactAddr) mergeUF.union(i,j);
+        }
+      }
+    }
+  });
+
+  // block by exact identical email address for suspected-only linking, regardless of name.
+  // (local-part-only matching across different domains was removed — too many false positives
+  // on common first-name-style email prefixes like leslie@, peggy@, mike@, etc.)
+  const byEmail = {};
+  rowInfo.forEach((info,i) => { info.emails.forEach(e => { if(e){ (byEmail[e]=byEmail[e]||[]).push(i); } }); });
+  Object.values(byEmail).forEach(group => {
+    for(let a=0;a<group.length;a++){
+      for(let b=a+1;b<group.length;b++){
+        suspUF.union(group[a], group[b]);
+      }
+    }
+  });
+
+  // gather merge clusters
+  const mergeClusters = {};
+  for(let i=0;i<n;i++){ const root = mergeUF.find(i); (mergeClusters[root]=mergeClusters[root]||[]).push(i); }
+  const realMergeClusters = Object.values(mergeClusters).filter(c => c.length>1);
+
+  const voidIdx = new Set();
+  const survivorIdx = new Set();
+  const extraCols = new Set(); // new columns created during merge (e.g. "Phone (2)")
+
+  realMergeClusters.forEach(cluster => {
+    let survivor = cluster[0];
+    cluster.forEach(i => { if(rowInfo[i].created > rowInfo[survivor].created) survivor = i; });
+    const others = cluster.filter(i => i!==survivor);
+    survivorIdx.add(survivor);
+    others.forEach(i => voidIdx.add(i));
+
+    // combine tags/groups/notes (comma separated, skip dup values at the individual-tag level, skip blanks)
+    const combineCols = [...(cols.tags||[]), ...(cols.groups||[]), ...(cols.notes||[])];
+    combineCols.forEach(c => {
+      const allTags = [rows[survivor][c], ...others.map(i => rows[i][c])]
+        .flatMap(v => (v||"").toString().split(",").map(s=>s.trim()).filter(Boolean));
+      const uniq = [...new Set(allTags)];
+      rows[survivor][c] = uniq.join(", ");
+    });
+
+    // fill-or-new-column for email/phone/address instances.
+    // Collects every distinct value across survivor + all older rows (survivor's own value
+    // always wins the primary slot if present), and creates as many "(2)", "(3)", etc.
+    // columns as needed so no distinct value is ever silently dropped.
+    const fillCols = [...(cols.emails||[]), ...(cols.phones||[]), ...(cols.addresses||[])];
+    fillCols.forEach(c => {
+      const allVals = [rows[survivor][c], ...others.map(i => rows[i][c])]
+        .map(v => (v||"").toString().trim());
+      const seen = new Set();
+      const distinct = [];
+      allVals.forEach(v => {
+        if(v && !seen.has(norm(v))){ seen.add(norm(v)); distinct.push(v); }
+      });
+      if(!distinct.length) return;
+      rows[survivor][c] = distinct[0];
+      for(let k=1;k<distinct.length;k++){
+        const newCol = c + " (" + (k+1) + ")";
+        extraCols.add(newCol);
+        rows[survivor][newCol] = distinct[k];
+      }
+    });
+
+    // other single-value fields: fill blank only
+    headers.forEach(c => {
+      if(combineCols.includes(c) || fillCols.includes(c) || c===cols.firstName || c===cols.lastName || c===cols.created) return;
+      const survivorVal = (rows[survivor][c]||"").toString().trim();
+      if(!survivorVal){
+        for(const i of others){
+          const v = (rows[i][c]||"").toString().trim();
+          if(v){ rows[survivor][c] = v; break; }
+        }
+      }
+    });
+  });
+
+  // suspected-only rows: any row in a suspected cluster of size>1 that did NOT itself
+  // end up merged or voided. Other members of the same cluster merging doesn't disqualify
+  // the remaining members from being flagged.
+  const suspClusters = {};
+  for(let i=0;i<n;i++){ const root = suspUF.find(i); (suspClusters[root]=suspClusters[root]||[]).push(i); }
+  const suspectedOnly = new Set();
+  Object.values(suspClusters).filter(c=>c.length>1).forEach(cluster => {
+    cluster.forEach(i => {
+      if(!survivorIdx.has(i) && !voidIdx.has(i)) suspectedOnly.add(i);
+    });
+  });
+
+  const TAG_COL = (cols.tags && cols.tags[0]) || "Tags";
+  if(!cols.tags || !cols.tags.length){ headers = [...headers, TAG_COL]; }
+
+  function appendTag(rowIdx, tag){
+    const cur = (rows[rowIdx][TAG_COL]||"").toString();
+    const parts = cur.split(",").map(s=>s.trim()).filter(Boolean);
+    if(!parts.includes(tag)) parts.push(tag);
+    rows[rowIdx][TAG_COL] = parts.join(", ");
+  }
+
+  suspectedOnly.forEach(i => appendTag(i, "CRM: Suspected Duplicate"));
+  survivorIdx.forEach(i => { appendTag(i, "CRM: Merged"); appendTag(i, "CRM: Duplicate"); });
+  voidIdx.forEach(i => { appendTag(i, "CRM: Void Dupe"); appendTag(i, "CRM: Duplicate"); });
+
+  const finalHeaders = [...headers, ...extraCols].filter((h,idx,arr)=>arr.indexOf(h)===idx);
+  const stripVoidTag = r => {
+    const copy = {...r};
+    const parts = (copy[TAG_COL]||"").toString().split(",").map(s=>s.trim()).filter(Boolean).filter(t => t !== "CRM: Void Dupe");
+    copy[TAG_COL] = parts.join(", ");
+    return copy;
+  };
+  const mergedRows = rows
+    .filter((_,i) => !voidIdx.has(i) && (survivorIdx.has(i) || suspectedOnly.has(i)))
+    .map(stripVoidTag);
+  const fullFileRows = rows
+    .filter((_,i) => !voidIdx.has(i))
+    .map(stripVoidTag);
+  const voidHeaders = [cols.firstName, cols.lastName, "Tags", "Tags", ...(cols.emails||[])];
+  const voidRows = [...voidIdx].map(i => {
+    const emailVals = (cols.emails||[]).map(c => rows[i][c] || "");
+    return [
+      rows[i][cols.firstName] || "",
+      rows[i][cols.lastName] || "",
+      "CRM: Void Dupe",
+      "CRM: Duplicate",
+      ...emailVals
+    ];
+  });
+
+  return {
+    finalHeaders, mergedRows, fullFileRows, voidRows, voidHeaders,
+    stats: {
+      total: n,
+      suspected: suspectedOnly.size,
+      merged: survivorIdx.size,
+      voided: voidIdx.size
+    },
+    tagCol: TAG_COL,
+    survivorIdx, voidIdx, suspectedOnly
+  };
+}
+
+function toCSV(rows, headers){
+  const esc = v => {
+    const s = (v===null||v===undefined) ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const lines = [headers.map(esc).join(",")];
+  rows.forEach(r => lines.push(headers.map(h => esc(r[h])).join(",")));
+  return lines.join("\r\n");
+}
+
+function toCSVFromArrays(rows, headers){
+  const esc = v => {
+    const s = (v===null||v===undefined) ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const lines = [headers.map(esc).join(",")];
+  rows.forEach(r => lines.push(r.map(esc).join(",")));
+  return lines.join("\r\n");
+}
+
+function renderResults(result){
+  document.getElementById("results").classList.add("show");
+  document.getElementById("statTotal").textContent = result.stats.total;
+  document.getElementById("statSuspect").textContent = result.stats.suspected;
+  document.getElementById("statMerge").textContent = result.stats.merged;
+  document.getElementById("statVoid").textContent = result.stats.voided;
+
+  const mergedCSV = toCSV(result.mergedRows, result.finalHeaders);
+  const fullCSV = toCSV(result.fullFileRows, result.finalHeaders);
+  const voidCSV = toCSVFromArrays(result.voidRows, result.voidHeaders);
+
+  const dlMerged = document.getElementById("dlMerged");
+  const dlFull = document.getElementById("dlFull");
+  const dlVoid = document.getElementById("dlVoid");
+  dlMerged.href = URL.createObjectURL(new Blob([mergedCSV], {type:"text/csv"}));
+  dlFull.href = URL.createObjectURL(new Blob([fullCSV], {type:"text/csv"}));
+  dlVoid.href = URL.createObjectURL(new Blob([voidCSV], {type:"text/csv"}));
+  dlMerged.download = uploadedBaseName + " - Merged Dupes.csv";
+  dlFull.download = uploadedBaseName + " - Full File.csv";
+  dlVoid.download = uploadedBaseName + " - Void Dupes.csv";
+
+  // preview table: first 60 original rows (including voided, to show the before/after)
+  const table = document.getElementById("previewTable");
+  const headers = result.finalHeaders;
+  let html = "<thead><tr>" + headers.map(h=>`<th>${h}</th>`).join("") + "</tr></thead><tbody>";
+  const previewRows = [];
+  for(let i=0;i<Math.min(60, result.stats.total); i++) previewRows.push(i);
+  // we need access to rows by original index; reconstruct via closures isn't available here,
+  // so we rebuild preview from mergedRows + voidIdx markers using a simpler approach:
+  html += buildPreviewRows(result, headers);
+  html += "</tbody>";
+  table.innerHTML = html;
+}
+
+function buildPreviewRows(result, headers){
+  // Re-derive display rows in original order using stored index sets.
+  const rowsByOriginalOrder = [];
+  const total = result.stats.total;
+  let mergedPtr = 0;
+  const mergedSet = new Set(result.mergedRows);
+  for(let i=0;i<Math.min(60, total); i++){
+    let cls = "";
+    if(result.voidIdx.has(i)) cls = "void-row";
+    else if(result.survivorIdx.has(i)) cls = "merged-row";
+    else if(result.suspectedOnly.has(i)) cls = "susp-row";
+    rowsByOriginalOrder.push({idx:i, cls});
+  }
+  // Map original index -> row data. mergedRows preserves relative order but drops voided rows;
+  // rebuild a lookup using the tag column presence instead, since we kept rows array by reference.
+  return rowsByOriginalOrder.map(({idx, cls}) => {
+    const row = __allRowsRef[idx];
+    return `<tr class="${cls}">` + headers.map(h => `<td>${(row[h]!==undefined?row[h]:"")}</td>`).join("") + `</tr>`;
+  }).join("");
+}
+
+let __allRowsRef = null;
+const _origProcess = process;
+process = function(rows, headers){
+  __allRowsRef = rows;
+  return _origProcess(rows, headers);
+};
+</script>
+</body>
+</html>
