@@ -1,1 +1,2 @@
-https://crmrefresh.github.io/Thunderdome/Thunderdome.html
+User-agent: *
+Disallow: /
