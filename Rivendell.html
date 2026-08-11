@@ -45,6 +45,15 @@
   .tag.v{background:#fbe9e4; color:#9c3d2e;}
   .rulecard p{margin:0; color:var(--muted); font-size:12.5px;}
 
+  .optionrow{
+    display:flex; align-items:flex-start; gap:10px; border:1px solid var(--line-strong);
+    padding:14px 16px; margin-bottom:24px; background:#fff;
+  }
+  .optionrow input[type="checkbox"]{ margin-top:2px; width:16px; height:16px; flex-shrink:0; accent-color:var(--blue); }
+  .optionrow label{ font-size:13.5px; cursor:pointer; }
+  .optionrow .opt-title{ font-weight:700; display:block; margin-bottom:2px; }
+  .optionrow .opt-sub{ color:var(--muted); font-size:12.5px; }
+
   .dropzone{
     border:2px dashed var(--line-strong); padding:36px 20px; text-align:center;
     cursor:pointer; transition:border-color .15s, background .15s; background:#fff;
@@ -146,6 +155,14 @@
     </div>
   </div>
 
+  <div class="optionrow">
+    <input type="checkbox" id="agentsOnlyToggle">
+    <label for="agentsOnlyToggle">
+      <span class="opt-title">Also merge on name match alone for Agents-only contacts</span>
+      <span class="opt-sub">When checked, two rows with a matching name will merge even without an identical email/phone/address, but only if BOTH rows have "Agents" as the sole value in the Groups column (no other group listed). Off by default.</span>
+    </label>
+  </div>
+
   <div class="dropzone" id="dropzone">
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
     <div class="dz-title">Click to choose a file, or drag one here</div>
@@ -223,6 +240,8 @@ Only merge when 100% confidence criteria are met. A pair merges ONLY if:
 - Name match (exact or known nickname variation) AND
 - Identical email (any email type/column) OR identical phone (any phone type/column) OR identical address (any address type/column)
 
+OPTIONAL (off by default -- must be explicitly enabled via the "Also merge on name match alone for Agents-only contacts" checkbox): if enabled, a pair also merges on name match alone -- no identical email/phone/address required -- if BOTH rows have "Agents" as the ONLY value in the Groups column (neither row lists any other group, e.g. Leads, Past Clients, Active Clients, Vendors, SOI).
+
 If not 100% confident, do NOT merge -- leave the pair tagged as suspected only.
 
 Clusters: If 3+ rows all meet the merge criteria with each other (chain), treat them as one cluster and merge all into the single newest row (by Created At). Do not do isolated pairwise merges within a cluster.
@@ -296,6 +315,10 @@ function canonFirst(s){ const n = norm(s); return NICK_MAP[n] || n; }
 function digitsOnly(s){ return norm(s).replace(/[^0-9]/g,""); }
 function last10(s){ const d = digitsOnly(s); return d.length>10 ? d.slice(-10) : d; }
 function normAddress(s){ return norm(s).replace(/[.,#]/g,"").replace(/\s+/g," ").trim(); }
+function isAgentsOnly(val){
+  const tokens = (val||"").toString().split(",").map(s=>s.trim()).filter(Boolean);
+  return tokens.length === 1 && tokens[0].toLowerCase() === "agents";
+}
 function emailLocal(e){ const n = norm(e); const at = n.indexOf("@"); return at>-1 ? n.slice(0,at) : n; }
 function parseDateSafe(s){
   if(!s) return -Infinity;
@@ -446,7 +469,8 @@ runBtn.addEventListener("click", () => {
   statusEl.textContent = "Processing...";
   setTimeout(() => {
     try {
-      const result = process(workbookRows, workbookHeaders);
+      const opts = { agentsOnlyMerge: document.getElementById("agentsOnlyToggle").checked };
+      const result = process(workbookRows, workbookHeaders, opts);
       renderResults(result);
       statusEl.textContent = "Done.";
     } catch(err){
@@ -457,13 +481,15 @@ runBtn.addEventListener("click", () => {
   }, 30);
 });
 
-function process(rows, headers){
+function process(rows, headers, opts){
+  opts = opts || {};
   const cols = discoverColumns(headers, rows);
   if(!cols.firstName || !cols.lastName){
     throw new Error("Couldn't find First Name / Last Name columns in this file.");
   }
 
   const n = rows.length;
+  const groupCol = (cols.groups && cols.groups[0]) || null;
   const rowInfo = rows.map(r => {
     const emails = (cols.emails||[]).map(c => norm(r[c])).filter(Boolean);
     const phones = (cols.phones||[]).map(c => last10(r[c])).filter(Boolean);
@@ -473,6 +499,7 @@ function process(rows, headers){
       firstCanon: canonFirst(r[cols.firstName]),
       emails, emailLocals: emails.map(emailLocal),
       phones, addrs,
+      agentsOnly: groupCol ? isAgentsOnly(r[groupCol]) : false,
       created: cols.created ? parseDateSafe(r[cols.created]) : -Infinity
     };
   });
@@ -493,7 +520,8 @@ function process(rows, headers){
           const exactEmail = rowInfo[i].emails.some(e => rowInfo[j].emails.includes(e));
           const exactPhone = rowInfo[i].phones.some(p => rowInfo[j].phones.includes(p));
           const exactAddr = rowInfo[i].addrs.some(a2 => rowInfo[j].addrs.includes(a2));
-          if(exactEmail || exactPhone || exactAddr) mergeUF.union(i,j);
+          const bothAgentsOnly = opts.agentsOnlyMerge && rowInfo[i].agentsOnly && rowInfo[j].agentsOnly;
+          if(exactEmail || exactPhone || exactAddr || bothAgentsOnly) mergeUF.union(i,j);
         }
       }
     }
