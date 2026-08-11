@@ -741,9 +741,9 @@ function buildPreviewRows(result, headers){
 
 let __allRowsRef = null;
 const _origProcess = process;
-process = function(rows, headers){
+process = function(rows, headers, opts){
   __allRowsRef = rows;
-  return _origProcess(rows, headers);
+  return _origProcess(rows, headers, opts);
 };
 </script>
 </body>
