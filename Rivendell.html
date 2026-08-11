@@ -622,9 +622,21 @@ function process(rows, headers, opts){
     rows[rowIdx][TAG_COL] = parts.join(", ");
   }
 
+  function setTags(rowIdx, toRemove, toAdd){
+    const cur = (rows[rowIdx][TAG_COL]||"").toString();
+    let parts = cur.split(",").map(s=>s.trim()).filter(Boolean);
+    parts = parts.filter(t => !toRemove.includes(t));
+    toAdd.forEach(t => { if(!parts.includes(t)) parts.push(t); });
+    rows[rowIdx][TAG_COL] = parts.join(", ");
+  }
+
   suspectedOnly.forEach(i => appendTag(i, "CRM: Suspected Duplicate"));
-  survivorIdx.forEach(i => { appendTag(i, "CRM: Merged"); appendTag(i, "CRM: Duplicate"); });
-  voidIdx.forEach(i => { appendTag(i, "CRM: Void Dupe"); appendTag(i, "CRM: Duplicate"); });
+  // Merging or voiding a row always replaces any existing "CRM: Suspected Duplicate" tag
+  // with "CRM: Duplicate" -- regardless of which rule triggered the merge (email/phone/
+  // address match, or the Agents-only option), and regardless of whether that suspected
+  // tag came from this run or was already present in the source data.
+  survivorIdx.forEach(i => setTags(i, ["CRM: Suspected Duplicate"], ["CRM: Merged","CRM: Duplicate"]));
+  voidIdx.forEach(i => setTags(i, ["CRM: Suspected Duplicate"], ["CRM: Void Dupe","CRM: Duplicate"]));
 
   const finalHeaders = [...headers, ...extraCols].filter((h,idx,arr)=>arr.indexOf(h)===idx);
   const stripVoidTag = r => {
