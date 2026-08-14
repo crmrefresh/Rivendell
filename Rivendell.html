@@ -156,10 +156,10 @@
   </div>
 
   <div class="optionrow">
-    <input type="checkbox" id="agentsOnlyToggle">
+    <input type="checkbox" id="agentsOnlyToggle" checked>
     <label for="agentsOnlyToggle">
       <span class="opt-title">Also merge on name match alone for Agents-only contacts</span>
-      <span class="opt-sub">When checked, two rows with a matching name will merge even without an identical email/phone/address, but only if BOTH rows have "Agents" as the sole value in the Groups column (no other group listed). Off by default.</span>
+      <span class="opt-sub">When checked, two rows with a matching name will merge even without an identical email/phone/address, but only if BOTH rows have "Agents" as the sole value in the Groups column (no other group listed). On by default — uncheck to disable.</span>
     </label>
   </div>
 
@@ -715,7 +715,7 @@ function renderResults(result){
   dlVoid.href = URL.createObjectURL(new Blob([voidCSV], {type:"text/csv"}));
   dlMerged.download = uploadedBaseName + " - Merged Dupes.csv";
   dlFull.download = uploadedBaseName + " - Full File.csv";
-  dlVoid.download = uploadedBaseName + " - Void Dupes.csv";
+  dlVoid.download = uploadedBaseName + " - Dupe Import 1 (void dupes).csv";
 
   // preview table: first 60 original rows (including voided, to show the before/after)
   const table = document.getElementById("previewTable");
