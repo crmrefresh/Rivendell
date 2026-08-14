@@ -713,8 +713,8 @@ function renderResults(result){
   dlMerged.href = URL.createObjectURL(new Blob([mergedCSV], {type:"text/csv"}));
   dlFull.href = URL.createObjectURL(new Blob([fullCSV], {type:"text/csv"}));
   dlVoid.href = URL.createObjectURL(new Blob([voidCSV], {type:"text/csv"}));
-  dlMerged.download = uploadedBaseName + " - Merged Dupes.csv";
-  dlFull.download = uploadedBaseName + " - Full File.csv";
+  dlMerged.download = uploadedBaseName + " - Dupe Import (updated rows only).csv";
+  dlFull.download = uploadedBaseName + " - Dupe Import 2 (full file).csv";
   dlVoid.download = uploadedBaseName + " - Dupe Import 1 (void dupes).csv";
 
   // preview table: first 60 original rows (including voided, to show the before/after)
